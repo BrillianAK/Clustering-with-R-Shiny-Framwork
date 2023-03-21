@@ -1,0 +1,187 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# 1. Import Lib
+
+```{r}
+library(BiocManager)
+# BiocManager::install(pkgs = "preprocessCore")
+library(preprocessCore)
+library(readxl)
+library(reshape2)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)  
+library(GGally)
+library(cluster)    # clustering algorithms
+library(NbClust)
+library(factoextra)
+library(stringr)
+library(bestNormalize)
+library(data.table)
+```
+
+# 2. Load Data
+
+```{r}
+df <- read_csv("C:\\Users\\james\\Downloads\\Data PHBS 2020.xlsx - Lembar1.csv")
+df <- column_to_rownames(df, var = "Kota")
+df <- as.data.frame(df)
+
+df
+```
+
+```{r}
+distance <- get_dist(df)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+# 3. Plot Dist
+
+```{r}
+df_long <- df %>%                          # Apply pivot_longer function
+  pivot_longer(colnames(df)) %>% 
+  as.data.frame()
+
+df_density <- ggplot(df_long, aes(x = value)) +    # Draw each column as density
+  geom_density() + 
+  facet_wrap(~name, labeller = labeller(name = label_wrap_gen(width = 20)))
+df_density
+```
+
+```{r}
+df_boxplot <- ggplot(df_long, aes(x = value)) +    # Draw each column as density
+  geom_boxplot() + 
+  facet_wrap(~name, labeller = labeller(name = label_wrap_gen(width = 20)))
+df_boxplot
+```
+
+# 4. Transform and Scale
+
+```{r}
+df_matrix <- data.matrix(df, rownames.force=nrow(df))
+normalized = normalize.quantiles.robust(df_matrix,
+                                        copy=TRUE,
+                                        weights=NULL,
+                                        remove.extreme="both",
+                                        n.remove=3,
+                                        use.median=FALSE,
+                                        use.log2=TRUE,
+                                        keep.names=FALSE)
+
+normalized = as.data.frame(normalized)
+normalized = as.data.frame(scale(normalized))
+
+
+colnames(normalized)= colnames(df)
+rownames(normalized) = rownames(df)
+normalized
+
+```
+
+```{r}
+normalized_long <- normalized %>% 
+  pivot_longer(colnames(normalized)) %>% 
+  as.data.frame()
+
+normalized_density <- ggplot(normalized_long, aes(x = value)) + geom_density() + facet_wrap(~name, labeller = labeller(name = label_wrap_gen(width = 20)))
+normalized_density
+```
+
+```{r}
+normalized_density <- ggplot(normalized_long, aes(x = value)) + geom_boxplot() + facet_wrap(~name, labeller = labeller(name = label_wrap_gen(width = 20)))
+normalized_density
+```
+
+# 5. EDA
+
+```{r}
+distance <- get_dist(normalized)
+fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"))
+```
+
+```{r}
+cormat <- as.data.frame(round(cor(normalized), 2))
+cormat
+```
+
+# 6. Compute Optimal Cluster
+
+```{r}
+res<-NbClust(normalized, distance = "euclidean", min.nc=2, max.nc=20, 
+            method = "kmeans", index = "alllong")
+```
+
+```{r}
+library(data.table)
+t_res = transpose(as.data.frame(res$Best.nc))
+
+colnames(t_res) <- rownames(as.data.frame(res$Best.nc))
+rownames(t_res) <- colnames(as.data.frame(res$Best.nc))
+
+t_res = t_res[order(t_res$Number_clusters), ]
+
+t_res
+```
+
+```{r}
+write.csv(t_res, "C:\\Users\\james\\Downloads\\nbClust.csv", row.names=TRUE)
+```
+
+```{r}
+best_partition <- as.data.frame(res$Best.partition)
+best_partition
+```
+
+```{r}
+fviz_nbclust(df, kmeans, method = "wss", k.max = 20)
+```
+
+```{r}
+fviz_nbclust(df, kmeans, method = "silhouette", k.max = 20)
+```
+
+```{r}
+fviz_nbclust(df, kmeans, method = "gap_stat", k.max = 20, print.summary = TRUE)
+```
+
+# 7. Clustering
+
+```{r}
+k2 <- kmeans(normalized, centers=2, nstart = 100, iter.max=1000, algorithm ='Lloyd')
+k2
+```
+
+```{r}
+fviz_cluster(k2, data = normalized, repel=TRUE)
+```
+
+```{r}
+centroid <- as.data.frame(k2$centers)
+
+t_centroid = transpose(as.data.frame(centroid))
+
+colnames(t_centroid) = (rownames(centroid))
+rownames(t_centroid) = colnames(centroid)
+
+
+t_centroid
+```
+
+```{r}
+write.csv(t_centroid, "C:\\Users\\james\\Downloads\\centroid.csv", row.names=TRUE)
+```
+
+```{r}
+cluster = as.data.frame(k2$cluster)
+cluster
+```
+
+```{r}
+k2$totss
+print(k2$betweenss)
+print(k2$size)
+print(k2$tot.withinss)
+```
